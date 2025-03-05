@@ -1,0 +1,51 @@
+<ng-content></ng-content>
+
+@let $customGutter = customGutter();
+
+@for (pane of _panes(); track pane; let index = $index; let last = $last) {
+  @if (!last) {
+    <div
+      #gutter
+      class="mtx-split-gutter"
+      role="separator"
+      tabindex="0"
+      [class]="color() ? 'mat-' + color() : ''"
+      [attr.aria-label]="gutterAriaLabel()"
+      [attr.aria-orientation]="direction()"
+      [attr.aria-valuemin]="getAriaValue($any(pane.minSize()))"
+      [attr.aria-valuemax]="getAriaValue($any(pane.maxSize()))"
+      [attr.aria-valuenow]="getAriaValue(pane._internalSize())"
+      [attr.aria-valuetext]="getAriaPaneSizeText(pane)"
+      [ngStyle]="getGutterGridStyle(index + 1)"
+      [class.as-dragged]="draggedGutterIndex() === index"
+      asMtxSplitCustomEventsBehavior
+      [asSplitCustomMultiClickThreshold]="gutterDblClickDuration()"
+      [asSplitCustomClickDeltaInPx]="gutterClickDeltaPx()"
+      (asSplitCustomClick)="gutterClicked(index)"
+      (asSplitCustomDblClick)="gutterDoubleClicked(index)"
+      (asSplitCustomMouseDown)="gutterMouseDown($event, gutter, index, index, index + 1)"
+      (asSplitCustomKeyDown)="gutterKeyDown($event, index, index, index + 1)"
+    >
+      @if ($customGutter && $customGutter.template) {
+        <ng-container *mtx-split-gutter-dynamic-injector="index + 1; let injector">
+          <ng-container
+            *ngTemplateOutlet="
+              $customGutter.template;
+              context: {
+                paneBefore: pane,
+                paneAfter: _panes()[index + 1],
+                gutterNum: index + 1,
+                first: $first,
+                last: index === _panes().length - 2,
+                isDragged: draggedGutterIndex() === index
+              };
+              injector: injector
+            "
+          ></ng-container>
+        </ng-container>
+      } @else {
+        <div class="mtx-split-gutter-handle"></div>
+      }
+    </div>
+  }
+}

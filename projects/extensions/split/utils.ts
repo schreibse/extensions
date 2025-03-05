@@ -1,288 +1,137 @@
-import { ElementRef } from '@angular/core';
+import { NgZone, inject, numberAttribute } from '@angular/core';
+import { Observable, filter, fromEvent, merge } from 'rxjs';
 
-import {
-  MtxSplitArea,
-  MtxSplitPoint,
-  MtxSplitAreaSnapshot,
-  MtxSplitSideAbsorptionCapacity,
-  MtxSplitAreaAbsorptionCapacity,
-} from './interfaces';
+export interface ClientPoint {
+  x: number;
+  y: number;
+}
 
-export function getPointFromEvent(event: MouseEvent | TouchEvent): MtxSplitPoint | null {
-  // TouchEvent
+/**
+ * Only supporting a single {@link TouchEvent} point
+ */
+export function getPointFromEvent(
+  event: MouseEvent | TouchEvent | KeyboardEvent
+): ClientPoint | undefined {
+  // NOTE: In firefox TouchEvent is only defined for touch capable devices
+  const isTouchEvent = (e: typeof event): e is TouchEvent =>
+    window.TouchEvent && event instanceof TouchEvent;
+
+  if (isTouchEvent(event)) {
+    if (event.changedTouches.length === 0) {
+      return undefined;
+    }
+
+    const { clientX, clientY } = event.changedTouches[0];
+
+    return {
+      x: clientX,
+      y: clientY,
+    };
+  }
+
+  if (event instanceof KeyboardEvent) {
+    const target = event.target as HTMLElement;
+
+    // Calculate element midpoint
+    return {
+      x: target.offsetLeft + target.offsetWidth / 2,
+      y: target.offsetTop + target.offsetHeight / 2,
+    };
+  }
+
+  return {
+    x: event.clientX,
+    y: event.clientY,
+  };
+}
+
+export function gutterEventsEqualWithDelta(
+  startEvent: MouseEvent | TouchEvent,
+  endEvent: MouseEvent | TouchEvent,
+  deltaInPx: number,
+  gutterElement: HTMLElement
+) {
   if (
-    (event as TouchEvent).changedTouches !== undefined &&
-    (event as TouchEvent).changedTouches.length > 0
+    !gutterElement.contains(startEvent.target as HTMLElement) ||
+    !gutterElement.contains(endEvent.target as HTMLElement)
   ) {
-    return {
-      x: (event as TouchEvent).changedTouches[0].clientX,
-      y: (event as TouchEvent).changedTouches[0].clientY,
-    };
-  }
-  // MouseEvent
-  else if (
-    (event as MouseEvent).clientX !== undefined &&
-    (event as MouseEvent).clientY !== undefined
-  ) {
-    return {
-      x: (event as MouseEvent).clientX,
-      y: (event as MouseEvent).clientY,
-    };
-  }
-  return null;
-}
-
-export function getElementPixelSize(
-  elRef: ElementRef,
-  direction: 'horizontal' | 'vertical'
-): number {
-  const rect = (elRef.nativeElement as HTMLElement).getBoundingClientRect();
-
-  return direction === 'horizontal' ? rect.width : rect.height;
-}
-
-export function getInputPositiveNumber<T>(v: any, defaultValue: T): number | T {
-  if (v === null || v === undefined) {
-    return defaultValue;
+    return false;
   }
 
-  v = Number(v);
-  return !isNaN(v) && v >= 0 ? v : defaultValue;
-}
+  const startPoint = getPointFromEvent(startEvent);
+  const endPoint = getPointFromEvent(endEvent);
 
-export function isUserSizesValid(
-  unit: 'percent' | 'pixel',
-  sizes: number[]
-): boolean | number | void {
-  // All sizes have to be not null and total should be 100
-  if (unit === 'percent') {
-    const total = sizes.reduce((_total, s) => (s !== null ? _total + s : _total), 0);
-    return sizes.every(s => s !== null) && total && total > 99.9 && total < 100.1;
+  if (!startPoint || !endPoint) {
+    return false;
   }
 
-  // A size at null is mandatory but only one.
-  if (unit === 'pixel') {
-    return sizes.filter(s => s === null).length === 1;
-  }
-}
-
-export function getAreaMinSize(a: MtxSplitArea): null | number {
-  if (a.size === null) {
-    return null;
-  }
-
-  if (a.component.lockSize === true) {
-    return a.size;
-  }
-
-  if (a.component.minSize === null) {
-    return null;
-  }
-
-  if (a.component.minSize > a.size) {
-    return a.size;
-  }
-
-  return a.component.minSize;
-}
-
-export function getAreaMaxSize(a: MtxSplitArea): null | number {
-  if (a.size === null) {
-    return null;
-  }
-
-  if (a.component.lockSize === true) {
-    return a.size;
-  }
-
-  if (a.component.maxSize === null) {
-    return null;
-  }
-
-  if (a.component.maxSize < a.size) {
-    return a.size;
-  }
-
-  return a.component.maxSize;
-}
-
-export function getGutterSideAbsorptionCapacity(
-  unit: 'percent' | 'pixel',
-  sideAreas: MtxSplitAreaSnapshot[],
-  pixels: number,
-  allAreasSizePixel: number
-): MtxSplitSideAbsorptionCapacity {
-  return sideAreas.reduce(
-    (acc: any, area) => {
-      const res = getAreaAbsorptionCapacity(unit, area, acc.remain, allAreasSizePixel);
-      acc.list.push(res);
-      acc.remain = res && res.pixelRemain;
-      return acc;
-    },
-    { remain: pixels, list: [] }
+  return (
+    Math.abs(endPoint.x - startPoint.x) <= deltaInPx &&
+    Math.abs(endPoint.y - startPoint.y) <= deltaInPx
   );
 }
 
-export function getAreaAbsorptionCapacity(
-  unit: 'percent' | 'pixel',
-  areaSnapshot: MtxSplitAreaSnapshot,
-  pixels: number,
-  allAreasSizePixel: number
-): MtxSplitAreaAbsorptionCapacity | void {
-  // No pain no gain
-  if (pixels === 0) {
-    return {
-      areaSnapshot,
-      pixelAbsorb: 0,
-      percentAfterAbsorption: areaSnapshot.sizePercentAtStart,
-      pixelRemain: 0,
-    };
-  }
-
-  // Area start at zero and need to be reduced, not possible
-  if (areaSnapshot.sizePixelAtStart === 0 && pixels < 0) {
-    return {
-      areaSnapshot,
-      pixelAbsorb: 0,
-      percentAfterAbsorption: 0,
-      pixelRemain: pixels,
-    };
-  }
-
-  if (unit === 'percent') {
-    return getAreaAbsorptionCapacityPercent(areaSnapshot, pixels, allAreasSizePixel);
-  }
-
-  if (unit === 'pixel') {
-    return getAreaAbsorptionCapacityPixel(areaSnapshot, pixels, allAreasSizePixel);
-  }
+export function fromMouseDownEvent(target: HTMLElement | Document) {
+  return merge(
+    fromEvent<MouseEvent>(target, 'mousedown').pipe(filter(e => e.button === 0)),
+    // We must prevent default here so we declare it as non passive explicitly
+    fromEvent<TouchEvent>(target, 'touchstart', { passive: false })
+  );
 }
 
-export function getAreaAbsorptionCapacityPercent(
-  areaSnapshot: MtxSplitAreaSnapshot,
-  pixels: number,
-  allAreasSizePixel: number
-): MtxSplitAreaAbsorptionCapacity | void {
-  const tempPixelSize = areaSnapshot.sizePixelAtStart + pixels;
-  const tempPercentSize = (tempPixelSize / allAreasSizePixel) * 100;
-
-  // ENLARGE AREA
-
-  if (pixels > 0) {
-    // If maxSize & newSize bigger than it > absorb to max and return remaining pixels
-    if (areaSnapshot.area.maxSize !== null && tempPercentSize > areaSnapshot.area.maxSize) {
-      // Use area.area.maxSize as newPercentSize and return calculate pixels remaining
-      const maxSizePixel = (areaSnapshot.area.maxSize / 100) * allAreasSizePixel;
-      return {
-        areaSnapshot,
-        pixelAbsorb: maxSizePixel,
-        percentAfterAbsorption: areaSnapshot.area.maxSize,
-        pixelRemain: areaSnapshot.sizePixelAtStart + pixels - maxSizePixel,
-      };
-    }
-    return {
-      areaSnapshot,
-      pixelAbsorb: pixels,
-      percentAfterAbsorption: tempPercentSize > 100 ? 100 : tempPercentSize,
-      pixelRemain: 0,
-    };
-  }
-
-  // REDUCE AREA
-  else if (pixels < 0) {
-    // If minSize & newSize smaller than it > absorb to min and return remaining pixels
-    if (areaSnapshot.area.minSize !== null && tempPercentSize < areaSnapshot.area.minSize) {
-      // Use area.area.minSize as newPercentSize and return calculate pixels remaining
-      const minSizePixel = (areaSnapshot.area.minSize / 100) * allAreasSizePixel;
-      return {
-        areaSnapshot,
-        pixelAbsorb: minSizePixel,
-        percentAfterAbsorption: areaSnapshot.area.minSize,
-        pixelRemain: areaSnapshot.sizePixelAtStart + pixels - minSizePixel,
-      };
-    }
-    // If reduced under zero > return remaining pixels
-    else if (tempPercentSize < 0) {
-      // Use 0 as newPercentSize and return calculate pixels remaining
-      return {
-        areaSnapshot,
-        pixelAbsorb: -areaSnapshot.sizePixelAtStart,
-        percentAfterAbsorption: 0,
-        pixelRemain: pixels + areaSnapshot.sizePixelAtStart,
-      };
-    }
-    return {
-      areaSnapshot,
-      pixelAbsorb: pixels,
-      percentAfterAbsorption: tempPercentSize,
-      pixelRemain: 0,
-    };
-  }
+export function fromMouseMoveEvent(target: HTMLElement | Document) {
+  return merge(
+    fromEvent<MouseEvent>(target, 'mousemove'),
+    fromEvent<TouchEvent>(target, 'touchmove')
+  );
 }
 
-export function getAreaAbsorptionCapacityPixel(
-  areaSnapshot: MtxSplitAreaSnapshot,
-  pixels: number,
-  containerSizePixel: number
-): MtxSplitAreaAbsorptionCapacity | void {
-  const tempPixelSize = areaSnapshot.sizePixelAtStart + pixels;
+export function fromMouseUpEvent(target: HTMLElement | Document, includeTouchCancel = false) {
+  const withoutTouchCancel = merge(
+    fromEvent<MouseEvent>(target, 'mouseup'),
+    fromEvent<TouchEvent>(target, 'touchend')
+  );
 
-  // ENLARGE AREA
-
-  if (pixels > 0) {
-    // If maxSize & newSize bigger than it > absorb to max and return remaining pixels
-    if (areaSnapshot.area.maxSize !== null && tempPixelSize > areaSnapshot.area.maxSize) {
-      return {
-        areaSnapshot,
-        pixelAbsorb: areaSnapshot.area.maxSize - areaSnapshot.sizePixelAtStart,
-        percentAfterAbsorption: -1,
-        pixelRemain: tempPixelSize - areaSnapshot.area.maxSize,
-      };
-    }
-    return {
-      areaSnapshot,
-      pixelAbsorb: pixels,
-      percentAfterAbsorption: -1,
-      pixelRemain: 0,
-    };
-  }
-
-  // REDUCE AREA
-  else if (pixels < 0) {
-    // If minSize & newSize smaller than it > absorb to min and return remaining pixels
-    if (areaSnapshot.area.minSize !== null && tempPixelSize < areaSnapshot.area.minSize) {
-      return {
-        areaSnapshot,
-        pixelAbsorb: areaSnapshot.area.minSize + pixels - tempPixelSize,
-        percentAfterAbsorption: -1,
-        pixelRemain: tempPixelSize - areaSnapshot.area.minSize,
-      };
-    }
-    // If reduced under zero > return remaining pixels
-    else if (tempPixelSize < 0) {
-      return {
-        areaSnapshot,
-        pixelAbsorb: -areaSnapshot.sizePixelAtStart,
-        percentAfterAbsorption: -1,
-        pixelRemain: pixels + areaSnapshot.sizePixelAtStart,
-      };
-    }
-    return {
-      areaSnapshot,
-      pixelAbsorb: pixels,
-      percentAfterAbsorption: -1,
-      pixelRemain: 0,
-    };
-  }
+  return includeTouchCancel
+    ? merge(withoutTouchCancel, fromEvent<TouchEvent>(target, 'touchcancel'))
+    : withoutTouchCancel;
 }
 
-export function updateAreaSize(unit: 'percent' | 'pixel', item: MtxSplitAreaAbsorptionCapacity) {
-  if (unit === 'percent') {
-    item.areaSnapshot.area.size = item.percentAfterAbsorption;
-  } else if (unit === 'pixel') {
-    // Update size except for the wildcard size area
-    if (item.areaSnapshot.area.size !== null) {
-      item.areaSnapshot.area.size = item.areaSnapshot.sizePixelAtStart + item.pixelAbsorb;
-    }
-  }
+export function sum<T>(array: T[] | readonly T[], fn: (item: T) => number) {
+  return (array as T[]).reduce((sum, item) => sum + fn(item), 0);
 }
+
+export function toRecord<TItem, TKey extends string, TValue>(
+  array: TItem[] | readonly TItem[],
+  fn: (item: TItem, index: number) => [TKey, TValue]
+): Record<TKey, TValue> {
+  return (array as TItem[]).reduce<Record<TKey, TValue>>(
+    (record, item, index) => {
+      const [key, value] = fn(item, index);
+      record[key] = value;
+      return record;
+    },
+    {} as Record<TKey, TValue>
+  );
+}
+
+export function createClassesString(classesRecord: Record<string, boolean>) {
+  return Object.entries(classesRecord)
+    .filter(([, value]) => value)
+    .map(([key]) => key)
+    .join(' ');
+}
+
+export function leaveNgZone<T>() {
+  return (source: Observable<T>) =>
+    new Observable<T>(observer =>
+      inject(NgZone).runOutsideAngular(() => source.subscribe(observer))
+    );
+}
+
+export const numberAttributeWithFallback = (fallback: number) => (value: unknown) =>
+  numberAttribute(value, fallback);
+
+export const assertUnreachable = (value: never, name: string) => {
+  throw new Error(`mtx-split: unknown value "${value}" for "${name}"`);
+};

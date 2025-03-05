@@ -1,0 +1,54 @@
+@use '../../core/tokens/token-utils';
+@use '../../core/tokens/m2/mtx/split' as tokens-mtx-split;
+
+$gutter-disabled-cursor: default;
+
+$_tokens: tokens-mtx-split.$prefix, tokens-mtx-split.get-token-slots();
+
+:host {
+  display: grid;
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+}
+
+:host(.as-transition) {
+  transition: grid-template 0.3s;
+}
+
+.mtx-split-gutter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+
+  @include token-utils.use-tokens($_tokens...) {
+    @include token-utils.create-token-slot(background-color, gutter-background-color);
+
+    &:hover {
+      @include token-utils.create-token-slot(background-color, gutter-hover-state-background-color);
+    }
+  }
+}
+
+:host(.as-horizontal) .mtx-split-gutter {
+  cursor: col-resize;
+  height: 100%;
+}
+
+:host(.as-vertical) .mtx-split-gutter {
+  cursor: row-resize;
+  width: 100%;
+}
+
+:host(.as-disabled) .mtx-split-gutter {
+  cursor: $gutter-disabled-cursor;
+}
+
+.mtx-split-gutter-icon {
+  width: 100%;
+  height: 100%;
+  background-position: center center;
+  background-repeat: no-repeat;
+}
+

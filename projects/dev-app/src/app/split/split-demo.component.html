@@ -10,9 +10,13 @@
     [restrictMove]="true"
     [useTransition]="true"
     [color]="themeColor"
+    gutterSize="35"
   >
+    <div *mtx-split-gutter class="custom-gutter">
+      <div mtx-split-gutter-drag-handle class="custom-gutter-icon"></div>
+    </div>
     <mtx-split-pane [size]="40">
-      <mtx-split direction="vertical" [restrictMove]="true">
+      <mtx-split direction="vertical" [color]="themeColor" [restrictMove]="true">
         <mtx-split-pane>
           <p>
             Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tiam, quis
@@ -46,7 +50,7 @@
       </mtx-split>
     </mtx-split-pane>
     <mtx-split-pane [size]="60">
-      <mtx-split direction="vertical" [restrictMove]="true">
+      <mtx-split direction="vertical" [color]="themeColor" [restrictMove]="true">
         <mtx-split-pane [size]="25">
           <p>
             Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tiam, quis
